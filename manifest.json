@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "SF3 Live Monitor",
+  "version": "0.1.0",
+  "description": "Monitors live SF3, NOF, and MomoFlow values from BigShort and raises threshold alarms.",
+  "action": {
+    "default_title": "Open SF3 Live Monitor"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "sidePanel", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://app.bigshort.com/*", "file://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://app.bigshort.com/*", "file://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
