@@ -1,5 +1,6 @@
 const SNAPSHOT_STORAGE_KEY = "sf3LiveMonitorSnapshot";
 const MONITOR_TARGET_STORAGE_KEY = "sf3LiveMonitorTarget";
+const MONITOR_HISTORY_STORAGE_KEY = "sf3LiveMonitorHistory";
 
 const SERIES_META = {
   sf3: {
@@ -14,7 +15,7 @@ const SERIES_META = {
     color: "#7ee787",
     negativeColor: "#ff7b72",
     cardClass: "metric-nof",
-    emptyMessage: "Waiting for NOFA samples from the tooltip or modal..."
+    emptyMessage: "Waiting for NOFA samples from the metrics modal..."
   },
   momoFlow: {
     label: "MomoFlow",
@@ -29,19 +30,19 @@ const USER_ALARM_METRIC_META = {
   nof: {
     label: "NOFA",
     placeholder: "250M",
-    helper: "Tracks the live minute delta bar for NOFA.",
+    helper: "Tracks the live minute change-sum bar for NOFA.",
     examples: "Examples: 250M, -100M, 1.2B"
   },
   momoFlow: {
     label: "MomoFlow",
     placeholder: "80M",
-    helper: "Tracks the live minute delta bar for MomoFlow.",
+    helper: "Tracks the live 5-minute reset delta bar for MomoFlow.",
     examples: "Examples: 80M, -40M, 500M"
   },
   sf3: {
     label: "SF3",
     placeholder: "300M",
-    helper: "Tracks the live minute delta bar for SF3.",
+    helper: "Tracks the live 5-minute reset delta bar for SF3.",
     examples: "Examples: 300M, -150M, 2B"
   },
   price: {
@@ -72,7 +73,10 @@ const HISTORICAL_SF3_THRESHOLDS = {
 };
 
 const METRIC_CHART_ORDER = ["nof", "momoFlow", "sf3"];
-const DELTA_CHART_METRICS = new Set(["nof", "sf3", "momoFlow"]);
+const MINUTE_CHANGE_SUM_METRICS = new Set(["nof"]);
+const FIVE_MINUTE_RESET_METRICS = new Set(["sf3", "momoFlow"]);
+const WICKY_METRIC_SCALE_STEP = 5_000_000;
+const WICKY_STYLE_SCALE_METRICS = new Set(["sf3", "momoFlow"]);
 const CHART_DIMENSIONS = {
   width: 640,
   height: 190,
@@ -89,6 +93,15 @@ const state = {
     sf3: new Map(),
     nof: new Map(),
     momoFlow: new Map()
+  },
+  lastMetricValues: {
+    sf3: null,
+    nof: null,
+    momoFlow: null
+  },
+  fiveMinuteMetricBases: {
+    sf3: null,
+    momoFlow: null
   },
   priceMinuteChanges: new Map(),
   sf3FiveMinuteBuckets: new Map(),
@@ -464,6 +477,7 @@ function updatePriceHistory(snapshot, timestamp) {
 function updateMetricHistory(snapshot) {
   const timestamp = new Date(snapshot.timestamp);
   const minuteBucket = floorToMinute(timestamp).getTime();
+  const fiveMinuteBucket = floorToFiveMinutes(timestamp).getTime();
 
   for (const key of Object.keys(state.minuteSeries)) {
     const series = state.minuteSeries[key];
@@ -472,15 +486,45 @@ function updateMetricHistory(snapshot) {
       continue;
     }
 
-    if (DELTA_CHART_METRICS.has(key)) {
+    if (FIVE_MINUTE_RESET_METRICS.has(key)) {
+      const currentBase = state.fiveMinuteMetricBases[key];
+      if (!currentBase || currentBase.bucket !== fiveMinuteBucket || !Number.isFinite(currentBase.value)) {
+        state.fiveMinuteMetricBases[key] = {
+          bucket: fiveMinuteBucket,
+          value: numericValue
+        };
+
+        series.set(minuteBucket, {
+          timestamp: minuteBucket,
+          baseValue: numericValue,
+          currentValue: numericValue,
+          value: 0
+        });
+      } else {
+        series.set(minuteBucket, {
+          timestamp: minuteBucket,
+          baseValue: currentBase.value,
+          currentValue: numericValue,
+          value: numericValue - currentBase.value
+        });
+      }
+    } else if (MINUTE_CHANGE_SUM_METRICS.has(key)) {
+      const previousValue = state.lastMetricValues[key];
+      state.lastMetricValues[key] = numericValue;
+
+      if (!Number.isFinite(previousValue)) {
+        continue;
+      }
+
       const existingEntry = series.get(minuteBucket);
-      const baseValue = existingEntry?.baseValue ?? numericValue;
+      const changeValue = numericValue - previousValue;
 
       series.set(minuteBucket, {
         timestamp: minuteBucket,
-        baseValue,
+        previousValue,
         currentValue: numericValue,
-        value: numericValue - baseValue
+        value: (existingEntry?.value ?? 0) + changeValue,
+        lastChange: changeValue
       });
     } else {
       series.set(minuteBucket, {
@@ -503,6 +547,44 @@ function updateMetricHistory(snapshot) {
     });
     pruneMap(state.sf3FiveMinuteBuckets, fiveMinuteBucket, MAX_FIVE_MINUTE_HISTORY_MS);
   }
+}
+
+function hydrateTimestampMap(map, entries) {
+  map.clear();
+
+  for (const entry of entries || []) {
+    if (!entry || !Number.isFinite(entry.timestamp)) {
+      continue;
+    }
+
+    map.set(entry.timestamp, entry);
+  }
+}
+
+function applyPersistedHistory(history) {
+  const minuteSeries = history?.minuteSeries || {};
+
+  for (const key of Object.keys(state.minuteSeries)) {
+    hydrateTimestampMap(state.minuteSeries[key], minuteSeries[key]);
+  }
+
+  state.lastMetricValues = {
+    sf3: history?.lastMetricValues?.sf3 ?? null,
+    nof: history?.lastMetricValues?.nof ?? null,
+    momoFlow: history?.lastMetricValues?.momoFlow ?? null
+  };
+
+  state.fiveMinuteMetricBases = {
+    sf3: history?.fiveMinuteMetricBases?.sf3 || null,
+    momoFlow: history?.fiveMinuteMetricBases?.momoFlow || null
+  };
+
+  hydrateTimestampMap(state.priceMinuteChanges, history?.priceMinuteChanges);
+  hydrateTimestampMap(state.sf3FiveMinuteBuckets, history?.sf3FiveMinuteBuckets);
+
+  return Object.values(state.minuteSeries).some((series) => series.size > 0) ||
+    state.priceMinuteChanges.size > 0 ||
+    state.sf3FiveMinuteBuckets.size > 0;
 }
 
 function evaluateAlerts(snapshot, isInitial) {
@@ -590,7 +672,7 @@ function renderCurrentMetrics() {
       title: "SF3",
       value: snapshot?.values?.sf3 || "--",
       detail: snapshot
-        ? `Source: ${snapshot.sources?.sf3 || "--"} | 5m line: ${describeThresholdState(sf3Status, snapshot.thresholds.sf3)} | Chart: minute delta`
+        ? `Source: ${snapshot.sources?.sf3 || "--"} | 5m line: ${describeThresholdState(sf3Status, snapshot.thresholds.sf3)} | Chart: 5m reset delta`
         : "Waiting for live tile value."
     },
     {
@@ -598,16 +680,16 @@ function renderCurrentMetrics() {
       title: "NOFA",
       value: snapshot?.values?.nof || "--",
       detail: snapshot
-        ? `Source: ${snapshot.sources?.nof || "--"} | NOF line: ${describeThresholdState(nofStatus, snapshot.thresholds.nof)} | Chart: minute delta`
-        : "Waiting for tooltip or modal value."
+        ? `Source: ${snapshot.sources?.nof || "--"} | NOF line: ${describeThresholdState(nofStatus, snapshot.thresholds.nof)} | Chart: minute change sum`
+        : "Waiting for metrics modal value."
     },
     {
       key: "momoFlow",
       title: "MomoFlow",
       value: snapshot?.values?.momoFlow || "--",
       detail: snapshot
-        ? `Source: ${snapshot.sources?.momoFlow || "--"} | MF line: ${describeThresholdState(momoStatus, snapshot.thresholds.mf)} | Chart: minute delta`
-        : "Waiting for tooltip or modal value."
+        ? `Source: ${snapshot.sources?.momoFlow || "--"} | MF line: ${describeThresholdState(momoStatus, snapshot.thresholds.mf)} | Chart: 5m reset delta`
+        : "Waiting for metrics modal value."
     },
     {
       key: "sf3",
@@ -705,7 +787,7 @@ function renderAlarmDisplay() {
 
       <div class="alarm-detail-grid">
         <div class="alarm-meta">
-          <span class="alarm-meta-label">Current Minute Delta</span>
+          <span class="alarm-meta-label">Current Chart Value</span>
           <strong>${formatAlarmValue(activeAlarm.metric, currentValue, { includeSign: true })}</strong>
         </div>
         <div class="alarm-meta">
@@ -823,7 +905,16 @@ function buildPriceChangeBars() {
   });
 }
 
-function buildChartScales(minValue, maxValue) {
+function snapMetricBoundary(value, direction, step) {
+  if (direction === "max") {
+    return Math.ceil(value / step) * step;
+  }
+
+  return Math.floor(value / step) * step;
+}
+
+function buildChartScales(minValue, maxValue, options = {}) {
+  const { metric = null } = options;
   const { width, height, margin } = CHART_DIMENSIONS;
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
@@ -831,6 +922,13 @@ function buildChartScales(minValue, maxValue) {
   const safeMax = Math.max(maxValue, 0);
   let adjustedMin = safeMin;
   let adjustedMax = safeMax;
+
+  if (metric && WICKY_STYLE_SCALE_METRICS.has(metric)) {
+    adjustedMin = Math.min(safeMin, -WICKY_METRIC_SCALE_STEP);
+    adjustedMax = Math.max(safeMax, WICKY_METRIC_SCALE_STEP);
+    adjustedMin = snapMetricBoundary(adjustedMin, "min", WICKY_METRIC_SCALE_STEP);
+    adjustedMax = snapMetricBoundary(adjustedMax, "max", WICKY_METRIC_SCALE_STEP);
+  }
 
   if (adjustedMin === adjustedMax) {
     const pad = Math.max(Math.abs(adjustedMax) * 0.1, 1);
@@ -921,7 +1019,7 @@ function renderMetricBarChart(metric) {
   }
 
   const windowPoints = getVisibleMinuteWindow();
-  const scales = buildChartScales(Math.min(...values, 0), Math.max(...values, 0));
+  const scales = buildChartScales(Math.min(...values, 0), Math.max(...values, 0), { metric });
   const barWidth = Math.min(42, (scales.plotWidth / windowPoints.length) * 0.6);
   const zeroY = scales.yScale(0);
 
@@ -1066,7 +1164,9 @@ function handleSnapshot(snapshot, options = {}) {
     }
   };
 
-  updateMetricHistory(state.snapshot);
+  if (options.rebuildHistory) {
+    updateMetricHistory(state.snapshot);
+  }
   checkCustomAlarm(Boolean(options.initial));
   evaluateAlerts(state.snapshot, Boolean(options.initial));
   render();
@@ -1074,6 +1174,17 @@ function handleSnapshot(snapshot, options = {}) {
 
 function resetMonitorData() {
   state.snapshot = null;
+
+  state.lastMetricValues = {
+    sf3: null,
+    nof: null,
+    momoFlow: null
+  };
+
+  state.fiveMinuteMetricBases = {
+    sf3: null,
+    momoFlow: null
+  };
 
   for (const key of Object.keys(state.minuteSeries)) {
     state.minuteSeries[key].clear();
@@ -1091,7 +1202,7 @@ function resetMonitorData() {
   };
 }
 
-function clearSession() {
+async function clearSession() {
   resetMonitorData();
 
   if (window.singleAlarmManager) {
@@ -1100,6 +1211,16 @@ function clearSession() {
   }
 
   render();
+
+  if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+    try {
+      await chrome.runtime.sendMessage({
+        type: "sf3-live-monitor-reset-history"
+      });
+    } catch (error) {
+      console.warn("[SF3 Live Monitor] Failed to reset persisted monitor history:", error);
+    }
+  }
 }
 
 async function loadInitialSnapshot() {
@@ -1108,11 +1229,19 @@ async function loadInitialSnapshot() {
     return;
   }
 
-  const data = await chrome.storage.local.get([SNAPSHOT_STORAGE_KEY, MONITOR_TARGET_STORAGE_KEY]);
+  const data = await chrome.storage.local.get([
+    SNAPSHOT_STORAGE_KEY,
+    MONITOR_TARGET_STORAGE_KEY,
+    MONITOR_HISTORY_STORAGE_KEY
+  ]);
   state.monitorTarget = data[MONITOR_TARGET_STORAGE_KEY] || null;
+  const hasPersistedHistory = applyPersistedHistory(data[MONITOR_HISTORY_STORAGE_KEY]);
 
   if (data[SNAPSHOT_STORAGE_KEY]) {
-    handleSnapshot(data[SNAPSHOT_STORAGE_KEY], { initial: true });
+    handleSnapshot(data[SNAPSHOT_STORAGE_KEY], {
+      initial: true,
+      rebuildHistory: !hasPersistedHistory
+    });
   } else {
     render();
   }
@@ -1146,7 +1275,7 @@ function bindEvents() {
   });
 
   elements.clearSessionButton.addEventListener("click", () => {
-    clearSession();
+    void clearSession();
   });
 
   elements.popoutButton.addEventListener("click", () => {
@@ -1220,6 +1349,10 @@ function bindEvents() {
           resetMonitorData();
         }
         render();
+      }
+
+      if (changes[MONITOR_HISTORY_STORAGE_KEY]) {
+        applyPersistedHistory(changes[MONITOR_HISTORY_STORAGE_KEY].newValue);
       }
 
       if (changes[SNAPSHOT_STORAGE_KEY]) {

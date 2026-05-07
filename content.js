@@ -6,9 +6,10 @@
   window.sf3LiveMonitorLoaded = true;
 
   const SNAPSHOT_STORAGE_KEY = "sf3LiveMonitorSnapshot";
-  const TOOLTIP_ROOT_SELECTOR = "g.highcharts-tooltip, div.highcharts-tooltip";
   const THRESHOLD_LABEL_SELECTOR = "text.highcharts-plot-line-label";
   const PRICE_SELECTOR = "span.higlight-number.shade1";
+  const METRICS_MODAL_SELECTOR = "#movableModal .movable-modal-content > div[style*='padding: 30px']";
+  const METRICS_MODAL_XPATH = "/html/body/div/div[1]/main/div[6]/div/div[1]/div/div[2]";
   const FALLBACK_SF3_THRESHOLD_XPATHS = [
     "/html/body/div/div[1]/main/div[1]/div[2]/div[3]/div[1]/svg/text[10]",
     "/html/body/div/div[1]/main/div[1]/div[2]/div[3]/div[1]/svg/text[11]"
@@ -74,19 +75,6 @@
     return number * multiplier;
   }
 
-  function isVisible(element) {
-    if (!element) {
-      return false;
-    }
-
-    const style = window.getComputedStyle(element);
-    const visibility = element.getAttribute("visibility") || style.visibility;
-    const opacityValue = element.getAttribute("opacity") || style.opacity || "1";
-    const opacity = Number.parseFloat(opacityValue);
-
-    return visibility !== "hidden" && style.display !== "none" && opacity > 0;
-  }
-
   function getLiveTileValues() {
     const values = {};
     const groups = [...document.querySelectorAll(".live-updates-graph")];
@@ -114,52 +102,45 @@
     return values;
   }
 
-  function extractMetricTextsFromNodes(nodes) {
-    const result = {};
-
-    for (const node of nodes) {
-      const text = normalizeText(node.textContent || "");
-      if (!text) {
-        continue;
-      }
-
-      const momoMatch = text.match(/MomoFlow:\s*(.+)$/i);
-      if (momoMatch && !result.momoFlow) {
-        result.momoFlow = normalizeText(momoMatch[1]);
-      }
-
-      const nofMatch = text.match(/(?:NOFA|NOF):\s*(.+)$/i);
-      if (nofMatch && !result.nof) {
-        result.nof = normalizeText(nofMatch[1]);
-      }
+  function nodeHasMetricsRows(node) {
+    if (!(node instanceof Element)) {
+      return false;
     }
 
-    return result;
+    const text = normalizeText(node.textContent || "");
+    return text.includes("MomoFlow:") && text.includes("NOFA:");
   }
 
-  function getTooltipMetrics() {
-    const tooltipRoots = [...document.querySelectorAll(TOOLTIP_ROOT_SELECTOR)];
-    let fallback = {};
-
-    for (const root of tooltipRoots) {
-      const nodes = [...root.querySelectorAll("text, span, div, p")];
-      const extracted = extractMetricTextsFromNodes(nodes);
-      if (!Object.keys(extracted).length) {
-        continue;
-      }
-
-      if (isVisible(root)) {
-        return extracted;
-      }
-
-      fallback = { ...fallback, ...extracted };
+  function getMetricsModalContainer() {
+    const directMatch = document.querySelector(METRICS_MODAL_SELECTOR);
+    if (nodeHasMetricsRows(directMatch)) {
+      return directMatch;
     }
 
-    return fallback;
+    const modalRoot = document.querySelector("#movableModal");
+    if (modalRoot) {
+      const candidates = [...modalRoot.querySelectorAll("div")];
+      const contentMatch = candidates.find((candidate) => nodeHasMetricsRows(candidate));
+      if (contentMatch) {
+        return contentMatch;
+      }
+    }
+
+    try {
+      const result = document.evaluate(METRICS_MODAL_XPATH, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const xpathMatch = result.singleNodeValue;
+      if (nodeHasMetricsRows(xpathMatch)) {
+        return xpathMatch;
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
   }
 
   function getModalMetrics() {
-    const container = document.querySelector("#movableModal div[style*='padding: 30px']");
+    const container = getMetricsModalContainer();
     if (!container) {
       return {};
     }
@@ -268,15 +249,14 @@
 
   function buildSnapshot() {
     const liveTiles = getLiveTileValues();
-    const tooltipMetrics = getTooltipMetrics();
     const modalMetrics = getModalMetrics();
     const price = getCurrentPrice();
     const thresholds = getThresholds();
 
     const values = {
       sf3: liveTiles.SF3 || "",
-      nof: tooltipMetrics.nof || modalMetrics.nof || "",
-      momoFlow: tooltipMetrics.momoFlow || modalMetrics.momoFlow || "",
+      nof: modalMetrics.nof || "",
+      momoFlow: modalMetrics.momoFlow || "",
       price: price.text || ""
     };
 
@@ -297,8 +277,8 @@
       thresholds,
       sources: {
         sf3: liveTiles.SF3 ? "tile" : "",
-        nof: tooltipMetrics.nof ? "tooltip" : modalMetrics.nof ? "modal" : "",
-        momoFlow: tooltipMetrics.momoFlow ? "tooltip" : modalMetrics.momoFlow ? "modal" : "",
+        nof: modalMetrics.nof ? "modal" : "",
+        momoFlow: modalMetrics.momoFlow ? "modal" : "",
         price: price.source
       }
     };
