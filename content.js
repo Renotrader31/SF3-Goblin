@@ -16,7 +16,9 @@
 
   let observer = null;
   let intervalId = null;
+  let scanTimeoutId = null;
   let scanQueued = false;
+  let forcePending = false;
   let lastSignature = "";
 
   function stopMonitoring() {
@@ -28,6 +30,11 @@
     if (intervalId != null) {
       window.clearInterval(intervalId);
       intervalId = null;
+    }
+
+    if (scanTimeoutId != null) {
+      window.clearTimeout(scanTimeoutId);
+      scanTimeoutId = null;
     }
 
     window.sf3LiveMonitorLoaded = false;
@@ -299,8 +306,9 @@
 
   async function persistSnapshot(snapshot) {
     try {
-      await chrome.storage.local.set({
-        [SNAPSHOT_STORAGE_KEY]: snapshot
+      await chrome.runtime.sendMessage({
+        type: "sf3-live-monitor-publish-snapshot",
+        snapshot
       });
     } catch (error) {
       const message = String(error?.message || error || "");
@@ -313,33 +321,42 @@
     }
   }
 
-  function queueScan() {
+  function flushScanQueue() {
+    scanQueued = false;
+    scanTimeoutId = null;
+
+    const force = forcePending;
+    forcePending = false;
+
+    const snapshot = buildSnapshot();
+    if (!snapshot) {
+      return;
+    }
+
+    const signature = JSON.stringify({
+      values: snapshot.values,
+      thresholds: snapshot.thresholds,
+      sources: snapshot.sources
+    });
+
+    if (!force && signature === lastSignature) {
+      return;
+    }
+
+    lastSignature = signature;
+    void persistSnapshot(snapshot);
+  }
+
+  function queueScan(options = {}) {
+    const { force = false } = options;
+    forcePending = forcePending || force;
+
     if (scanQueued) {
       return;
     }
 
     scanQueued = true;
-    window.requestAnimationFrame(() => {
-      scanQueued = false;
-
-      const snapshot = buildSnapshot();
-      if (!snapshot) {
-        return;
-      }
-
-      const signature = JSON.stringify({
-        values: snapshot.values,
-        thresholds: snapshot.thresholds,
-        sources: snapshot.sources
-      });
-
-      if (signature === lastSignature) {
-        return;
-      }
-
-      lastSignature = signature;
-      void persistSnapshot(snapshot);
-    });
+    scanTimeoutId = window.setTimeout(flushScanQueue, 0);
   }
 
   function startObserver() {
@@ -361,9 +378,15 @@
   }
 
   function init() {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type === "sf3-live-monitor-force-scan") {
+        queueScan({ force: true });
+      }
+    });
+
     startObserver();
     intervalId = window.setInterval(queueScan, 1000);
-    queueScan();
+    queueScan({ force: true });
   }
 
   init();

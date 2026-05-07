@@ -41,6 +41,26 @@
         gap: 12px;
       }
 
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-logo {
+        width: 68px;
+        height: 68px;
+        border-radius: 16px;
+        border: 1px solid rgba(154, 176, 212, 0.18);
+        box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
+        object-fit: cover;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .brand-copy {
+        min-width: 0;
+      }
+
       .title {
         font-size: 20px;
         font-weight: 700;
@@ -220,6 +240,242 @@
         margin: 0;
       }
 
+      .alarm-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .alarm-display {
+        min-height: 92px;
+      }
+
+      .alarm-empty {
+        border: 1px dashed rgba(154, 176, 212, 0.2);
+        border-radius: 12px;
+        padding: 14px;
+        color: #b4c4df;
+        font-size: 13px;
+        line-height: 1.55;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .alarm-card {
+        display: grid;
+        gap: 12px;
+      }
+
+      .alarm-top-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .alarm-status-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .alarm-status-chip.active {
+        background: rgba(59, 130, 246, 0.16);
+        color: #9ec5ff;
+      }
+
+      .alarm-status-chip.triggered {
+        background: rgba(239, 68, 68, 0.18);
+        color: #ffb3bc;
+      }
+
+      .alarm-title {
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .alarm-subtitle {
+        margin-top: 4px;
+        font-size: 12px;
+        color: #b4c4df;
+        line-height: 1.5;
+      }
+
+      .alarm-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .alarm-detail-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .alarm-meta {
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(154, 176, 212, 0.12);
+      }
+
+      .alarm-meta-label {
+        display: block;
+        margin-bottom: 6px;
+        color: #8ea3c5;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .alarm-meta strong {
+        display: block;
+        color: #e8efff;
+        font-size: 15px;
+      }
+
+      .alarm-history {
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(154, 176, 212, 0.12);
+      }
+
+      .alarm-history-title {
+        font-size: 12px;
+        font-weight: 800;
+        color: #8ea3c5;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 10px;
+      }
+
+      .alarm-history-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .alarm-history-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: #dce8ff;
+      }
+
+      .alarm-history-item span:last-child {
+        color: #8ea3c5;
+        text-align: right;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(4, 8, 15, 0.72);
+        z-index: 1000;
+      }
+
+      .modal.open {
+        display: flex;
+      }
+
+      .modal-content {
+        width: min(100%, 420px);
+        border-radius: 16px;
+        border: 1px solid rgba(154, 176, 212, 0.18);
+        background: #101926;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
+        padding: 18px;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .modal-header h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .modal-close {
+        background: transparent;
+        color: #b4c4df;
+        padding: 0;
+        font-size: 24px;
+        line-height: 1;
+      }
+
+      .form-group {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      .form-group label,
+      .checkbox-row {
+        font-size: 13px;
+        color: #dce8ff;
+      }
+
+      .form-group input,
+      .form-group select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(154, 176, 212, 0.18);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        color: #e8efff;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+
+      .form-group input:focus,
+      .form-group select:focus {
+        outline: none;
+        border-color: rgba(59, 130, 246, 0.72);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+      }
+
+      .form-hint {
+        font-size: 12px;
+        color: #8ea3c5;
+        line-height: 1.45;
+      }
+
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .checkbox-row input {
+        margin: 0;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
       .alerts-list {
         list-style: none;
         padding: 0;
@@ -269,6 +525,13 @@
           flex-direction: column;
         }
 
+        .brand-lockup,
+        .alarm-panel-header,
+        .alarm-top-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
         .header-actions {
           width: 100%;
         }
@@ -278,7 +541,8 @@
         }
 
         .card-grid,
-        .rolling-grid {
+        .rolling-grid,
+        .alarm-detail-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -288,9 +552,12 @@
     <div class="shell">
       <section class="panel">
         <div class="header">
-          <div>
-            <h1 class="title">SF3 Live Monitor</h1>
-            <p class="subtitle">Tracks live SF3, NOFA, MomoFlow, and price from BigShort, with separate stacked charts and a Wicky-style pop-out view.</p>
+          <div class="brand-lockup">
+            <img class="brand-logo" src="assets/eating-the-dip.png" alt="Eating the Dip logo" />
+            <div class="brand-copy">
+              <h1 class="title">SF3 Live Monitor</h1>
+              <p class="subtitle">Tracks live SF3, NOFA, MomoFlow, and price from BigShort, with separate stacked charts, your custom logo, and a Wicky-style pop-out view.</p>
+            </div>
           </div>
           <div class="header-actions">
             <button class="secondary" id="popoutButton" type="button">Pop Out</button>
@@ -300,6 +567,7 @@
         </div>
         <div class="meta-row">
           <span class="badge waiting" id="statusBadge">Waiting for BigShort data</span>
+          <span id="monitorTargetText">Pinned source: click the extension on the BigShort tab you want to monitor.</span>
           <span id="lastUpdatedText">Last update: --</span>
         </div>
       </section>
@@ -310,6 +578,17 @@
 
       <section class="panel">
         <div class="rolling-grid" id="rollingMetricsGrid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="alarm-panel-header">
+          <div>
+            <div class="title" style="font-size: 16px;">Custom Alarm</div>
+            <div class="subtitle">One active alarm, Wicky-style. It watches the live minute delta of NOFA, MomoFlow, SF3, or price and can trigger once per 5-minute window.</div>
+          </div>
+          <button class="primary" id="createAlarmButton" type="button">Create Alarm</button>
+        </div>
+        <div class="alarm-display" id="alarmDisplay"></div>
       </section>
 
       <div class="chart-stack">
@@ -360,12 +639,50 @@
 
       <section class="panel">
         <div class="title" style="font-size: 16px;">Alerts</div>
-        <div class="subtitle">Audio fires when a monitored state crosses into a new alert band.</div>
+        <div class="subtitle">Built-in threshold alerts and custom alarm triggers land here. Audio only sounds after you arm it.</div>
         <ul class="alerts-list" id="alertsList"></ul>
       </section>
     </div>
 
+    <div class="modal" id="alarmModal" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Create Alarm</h3>
+          <button class="modal-close" id="closeAlarmModalButton" type="button" aria-label="Close alarm dialog">x</button>
+        </div>
+        <form id="alarmForm">
+          <div class="form-group">
+            <label for="alarmMetricSelect">Metric</label>
+            <select id="alarmMetricSelect" required>
+              <option value="nof">NOFA</option>
+              <option value="momoFlow">MomoFlow</option>
+              <option value="sf3">SF3</option>
+              <option value="price">Price</option>
+            </select>
+            <div class="form-hint" id="alarmMetricHint"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="alarmThresholdInput">Threshold</label>
+            <input id="alarmThresholdInput" type="text" autocomplete="off" required />
+            <div class="form-hint" id="alarmThresholdHint"></div>
+          </div>
+
+          <label class="checkbox-row" for="alarmAbsoluteCheckbox">
+            <input id="alarmAbsoluteCheckbox" type="checkbox" />
+            Trigger on absolute magnitude instead of direction
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary" id="cancelAlarmButton" type="button">Cancel</button>
+            <button class="primary" type="submit">Save Alarm</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <script src="audio-alarm-notifier.js"></script>
+    <script src="single-alarm-manager.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

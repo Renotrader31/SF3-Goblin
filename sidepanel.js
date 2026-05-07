@@ -1,4 +1,5 @@
 const SNAPSHOT_STORAGE_KEY = "sf3LiveMonitorSnapshot";
+const MONITOR_TARGET_STORAGE_KEY = "sf3LiveMonitorTarget";
 
 const SERIES_META = {
   sf3: {
@@ -21,6 +22,33 @@ const SERIES_META = {
     negativeColor: "#e5484d",
     cardClass: "metric-mf",
     emptyMessage: "Waiting for MomoFlow samples..."
+  }
+};
+
+const USER_ALARM_METRIC_META = {
+  nof: {
+    label: "NOFA",
+    placeholder: "250M",
+    helper: "Tracks the live minute delta bar for NOFA.",
+    examples: "Examples: 250M, -100M, 1.2B"
+  },
+  momoFlow: {
+    label: "MomoFlow",
+    placeholder: "80M",
+    helper: "Tracks the live minute delta bar for MomoFlow.",
+    examples: "Examples: 80M, -40M, 500M"
+  },
+  sf3: {
+    label: "SF3",
+    placeholder: "300M",
+    helper: "Tracks the live minute delta bar for SF3.",
+    examples: "Examples: 300M, -150M, 2B"
+  },
+  price: {
+    label: "Price",
+    placeholder: "0.05",
+    helper: "Tracks the live minute delta bar in dollars. 0.05 means five cents.",
+    examples: "Examples: 0.05, -0.10, 0.25"
   }
 };
 
@@ -56,6 +84,7 @@ const MAX_FIVE_MINUTE_HISTORY_MS = 48 * 60 * 60 * 1000;
 
 const state = {
   snapshot: null,
+  monitorTarget: null,
   minuteSeries: {
     sf3: new Map(),
     nof: new Map(),
@@ -225,8 +254,74 @@ function formatMinuteLabel(date) {
   });
 }
 
+function formatMonitorTargetLabel(target) {
+  const title = normalizeText(target?.title || "");
+  if (title) {
+    return title;
+  }
+
+  try {
+    const url = new URL(target?.url || "");
+    return `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch {
+    return normalizeText(target?.url || "selected BigShort tab");
+  }
+}
+
+function describeMonitorTarget() {
+  const target = state.monitorTarget;
+  if (!target) {
+    return "Pinned source: click the extension on the BigShort tab you want to monitor.";
+  }
+
+  const label = formatMonitorTargetLabel(target) || "selected BigShort tab";
+  if (target.status === "closed") {
+    return `Pinned source: ${label}. That tab was closed, so click the extension again on the tab you want to track.`;
+  }
+
+  if (target.status === "unsupported") {
+    return `Pinned source: ${label}. That tab left a supported BigShort page.`;
+  }
+
+  return `Pinned source: ${label}. Monitoring stays on that tab even when this panel is closed.`;
+}
+
 function getReferenceTime() {
   return state.snapshot ? new Date(state.snapshot.timestamp) : new Date();
+}
+
+function getAlarmMetricLabel(metric) {
+  return USER_ALARM_METRIC_META[metric]?.label || metric;
+}
+
+function getCurrentAlarmValue(metric, referenceTime = getReferenceTime()) {
+  const minuteBucket = floorToMinute(referenceTime).getTime();
+
+  if (metric === "price") {
+    const priceEntry = state.priceMinuteChanges.get(minuteBucket);
+    return priceEntry ? priceEntry.changeCents / 100 : null;
+  }
+
+  const seriesEntry = state.minuteSeries[metric]?.get(minuteBucket);
+  return seriesEntry?.value ?? null;
+}
+
+function formatAlarmValue(metric, value, options = {}) {
+  const { includeSign = false } = options;
+
+  if (value == null || !Number.isFinite(value)) {
+    return "--";
+  }
+
+  if (metric === "price") {
+    return formatPriceChangeCents(value * 100, {
+      includeSign,
+      includeUnit: false
+    });
+  }
+
+  const compactValue = formatCompactNumber(value);
+  return includeSign && value > 0 ? `+${compactValue}` : compactValue;
 }
 
 function pruneMap(map, referenceTime, maxAgeMs) {
@@ -321,6 +416,29 @@ function buildAlert(message) {
   if (state.audioArmed && window.audioAlarmNotifier) {
     void window.audioAlarmNotifier.playAlarm();
   }
+}
+
+function checkCustomAlarm(skipInitial) {
+  if (skipInitial || !window.singleAlarmManager) {
+    return;
+  }
+
+  const alarm = window.singleAlarmManager.getCurrentAlarm();
+  if (!alarm) {
+    return;
+  }
+
+  const referenceTime = getReferenceTime();
+  const currentValue = getCurrentAlarmValue(alarm.metric, referenceTime);
+  const triggerEvent = window.singleAlarmManager.checkAlarm(currentValue, alarm.metric, referenceTime);
+  if (!triggerEvent) {
+    return;
+  }
+
+  const thresholdText = formatAlarmValue(alarm.metric, alarm.threshold);
+  const valueText = formatAlarmValue(alarm.metric, triggerEvent.value, { includeSign: true });
+  const absoluteText = alarm.isAbsolute ? " absolute" : "";
+  buildAlert(`${getAlarmMetricLabel(alarm.metric)} custom${absoluteText} alarm hit ${thresholdText} at ${valueText}.`);
 }
 
 function updatePriceHistory(snapshot, timestamp) {
@@ -434,7 +552,9 @@ function evaluateAlerts(snapshot, isInitial) {
 }
 
 function renderStatus() {
-  if (!state.snapshot) {
+  elements.monitorTargetText.textContent = describeMonitorTarget();
+
+  if (!state.snapshot || state.monitorTarget?.status && state.monitorTarget.status !== "active") {
     elements.statusBadge.className = "badge waiting";
     elements.statusBadge.textContent = "Waiting for BigShort data";
     elements.lastUpdatedText.textContent = "Last update: --";
@@ -538,6 +658,124 @@ function renderRollingMetrics() {
       <div class="metric-detail" style="margin-top: 10px; color:#8ea3c5;">${card.thresholds}</div>
     </article>
   `).join("");
+}
+
+function renderAlarmDisplay() {
+  if (!elements.alarmDisplay || !elements.createAlarmButton) {
+    return;
+  }
+
+  const alarmManager = window.singleAlarmManager;
+  const activeAlarm = alarmManager?.getCurrentAlarm();
+  elements.createAlarmButton.textContent = activeAlarm ? "Replace Alarm" : "Create Alarm";
+
+  if (!activeAlarm) {
+    elements.alarmDisplay.innerHTML = `
+      <div class="alarm-empty">No custom alarm set. Create one for NOFA, MomoFlow, SF3, or price and it will trigger once per 5-minute boundary like Wicky.</div>
+    `;
+    return;
+  }
+
+  const referenceTime = getReferenceTime();
+  const currentValue = getCurrentAlarmValue(activeAlarm.metric, referenceTime);
+  const hasTriggered = alarmManager.hasTriggeredCurrentBoundary(referenceTime);
+  const triggerHistory = alarmManager.getTriggerHistory();
+  const historyMarkup = triggerHistory.length
+    ? triggerHistory.slice(0, 5).map((trigger) => `
+      <div class="alarm-history-item">
+        <span>${formatTimestamp(trigger.timestamp)} ${formatAlarmValue(trigger.metric, trigger.value, { includeSign: true })}</span>
+        <span>${trigger.isAbsolute ? "Absolute" : "Directional"}</span>
+      </div>
+    `).join("")
+    : `<div class="alarm-history-item"><span>No triggers yet</span><span>Waiting for live data</span></div>`;
+
+  elements.alarmDisplay.innerHTML = `
+    <div class="alarm-card">
+      <div class="alarm-top-row">
+        <div>
+          <div class="alarm-status-chip ${hasTriggered ? "triggered" : "active"}">${hasTriggered ? "Triggered This 5m Window" : "Active"}</div>
+          <div class="alarm-title">${getAlarmMetricLabel(activeAlarm.metric)}</div>
+          <div class="alarm-subtitle">${activeAlarm.isAbsolute ? "Absolute magnitude" : "Directional"} threshold at ${formatAlarmValue(activeAlarm.metric, activeAlarm.threshold)}.</div>
+        </div>
+        <div class="alarm-actions">
+          <button class="secondary" id="acknowledgeAlarmButton" type="button" ${hasTriggered ? "" : "disabled"}>Acknowledge</button>
+          <button class="secondary" id="deleteAlarmButton" type="button">Delete Alarm</button>
+        </div>
+      </div>
+
+      <div class="alarm-detail-grid">
+        <div class="alarm-meta">
+          <span class="alarm-meta-label">Current Minute Delta</span>
+          <strong>${formatAlarmValue(activeAlarm.metric, currentValue, { includeSign: true })}</strong>
+        </div>
+        <div class="alarm-meta">
+          <span class="alarm-meta-label">Created</span>
+          <strong>${formatTimestamp(activeAlarm.createdAt)}</strong>
+        </div>
+        <div class="alarm-meta">
+          <span class="alarm-meta-label">Mode</span>
+          <strong>${activeAlarm.isAbsolute ? "Absolute" : "Directional"}</strong>
+        </div>
+      </div>
+
+      <div class="alarm-history">
+        <div class="alarm-history-title">Recent Triggers</div>
+        <div class="alarm-history-list">${historyMarkup}</div>
+      </div>
+    </div>
+  `;
+
+  const acknowledgeButton = document.getElementById("acknowledgeAlarmButton");
+  if (acknowledgeButton) {
+    acknowledgeButton.addEventListener("click", () => {
+      alarmManager.acknowledgeAlarm();
+    });
+  }
+
+  const deleteButton = document.getElementById("deleteAlarmButton");
+  if (deleteButton) {
+    deleteButton.addEventListener("click", () => {
+      alarmManager.deleteAlarm();
+      renderAlarmDisplay();
+    });
+  }
+}
+
+function updateAlarmFormState() {
+  const metric = elements.alarmMetricSelect?.value || "nof";
+  const metricMeta = USER_ALARM_METRIC_META[metric];
+  if (!metricMeta) {
+    return;
+  }
+
+  elements.alarmMetricHint.textContent = metricMeta.helper;
+  elements.alarmThresholdInput.placeholder = metricMeta.placeholder;
+  elements.alarmThresholdHint.textContent = metricMeta.examples;
+}
+
+function openAlarmModal() {
+  if (!elements.alarmModal) {
+    return;
+  }
+
+  const activeAlarm = window.singleAlarmManager?.getCurrentAlarm();
+  elements.alarmMetricSelect.value = activeAlarm?.metric || "nof";
+  elements.alarmThresholdInput.value = activeAlarm?.thresholdInput || "";
+  elements.alarmAbsoluteCheckbox.checked = Boolean(activeAlarm?.isAbsolute);
+  updateAlarmFormState();
+  elements.alarmModal.classList.add("open");
+  elements.alarmModal.setAttribute("aria-hidden", "false");
+  elements.alarmThresholdInput.focus();
+  elements.alarmThresholdInput.select();
+}
+
+function closeAlarmModal() {
+  if (!elements.alarmModal) {
+    return;
+  }
+
+  elements.alarmModal.classList.remove("open");
+  elements.alarmModal.setAttribute("aria-hidden", "true");
 }
 
 function getVisibleMinuteWindow() {
@@ -778,7 +1016,7 @@ function renderAlerts() {
     elements.alertsList.innerHTML = `
       <li>
         <span class="alert-time">No alerts yet</span>
-        <div class="alert-message">The panel will log threshold crossings here once live data moves into a new alert state.</div>
+        <div class="alert-message">The panel will log built-in threshold crossings and custom alarm triggers here once live data moves into a new alert state.</div>
       </li>
     `;
     return;
@@ -804,6 +1042,7 @@ function render() {
   renderStatus();
   renderCurrentMetrics();
   renderRollingMetrics();
+  renderAlarmDisplay();
   renderCharts();
   renderAlerts();
 }
@@ -811,6 +1050,10 @@ function render() {
 function handleSnapshot(snapshot, options = {}) {
   if (!snapshot?.timestamp) {
     return;
+  }
+
+  if (snapshot.monitorTarget) {
+    state.monitorTarget = snapshot.monitorTarget;
   }
 
   state.snapshot = {
@@ -824,11 +1067,14 @@ function handleSnapshot(snapshot, options = {}) {
   };
 
   updateMetricHistory(state.snapshot);
+  checkCustomAlarm(Boolean(options.initial));
   evaluateAlerts(state.snapshot, Boolean(options.initial));
   render();
 }
 
-function clearSession() {
+function resetMonitorData() {
+  state.snapshot = null;
+
   for (const key of Object.keys(state.minuteSeries)) {
     state.minuteSeries[key].clear();
   }
@@ -843,6 +1089,16 @@ function clearSession() {
     hourlyBand: null,
     dailyBand: null
   };
+}
+
+function clearSession() {
+  resetMonitorData();
+
+  if (window.singleAlarmManager) {
+    window.singleAlarmManager.clearTriggerHistory();
+    window.singleAlarmManager.resetBoundaryState(getReferenceTime());
+  }
+
   render();
 }
 
@@ -852,7 +1108,9 @@ async function loadInitialSnapshot() {
     return;
   }
 
-  const data = await chrome.storage.local.get(SNAPSHOT_STORAGE_KEY);
+  const data = await chrome.storage.local.get([SNAPSHOT_STORAGE_KEY, MONITOR_TARGET_STORAGE_KEY]);
+  state.monitorTarget = data[MONITOR_TARGET_STORAGE_KEY] || null;
+
   if (data[SNAPSHOT_STORAGE_KEY]) {
     handleSnapshot(data[SNAPSHOT_STORAGE_KEY], { initial: true });
   } else {
@@ -895,13 +1153,83 @@ function bindEvents() {
     openPopoutWindow();
   });
 
+  elements.createAlarmButton.addEventListener("click", () => {
+    openAlarmModal();
+  });
+
+  elements.closeAlarmModalButton.addEventListener("click", () => {
+    closeAlarmModal();
+  });
+
+  elements.cancelAlarmButton.addEventListener("click", () => {
+    closeAlarmModal();
+  });
+
+  elements.alarmMetricSelect.addEventListener("change", () => {
+    updateAlarmFormState();
+  });
+
+  elements.alarmForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    if (!window.singleAlarmManager) {
+      return;
+    }
+
+    try {
+      window.singleAlarmManager.createAlarm({
+        metric: elements.alarmMetricSelect.value,
+        thresholdInput: elements.alarmThresholdInput.value.trim(),
+        isAbsolute: elements.alarmAbsoluteCheckbox.checked
+      });
+      closeAlarmModal();
+      renderAlarmDisplay();
+    } catch (error) {
+      elements.alarmThresholdHint.textContent = error.message;
+    }
+  });
+
+  elements.alarmModal.addEventListener("click", (event) => {
+    if (event.target === elements.alarmModal) {
+      closeAlarmModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && elements.alarmModal.classList.contains("open")) {
+      closeAlarmModal();
+    }
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (window.singleAlarmManager?.isStorageKey(event.key)) {
+      window.singleAlarmManager.reloadFromStorage();
+      renderAlarmDisplay();
+    }
+  });
+
   if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "local" || !changes[SNAPSHOT_STORAGE_KEY]?.newValue) {
+      if (areaName !== "local") {
         return;
       }
 
-      handleSnapshot(changes[SNAPSHOT_STORAGE_KEY].newValue);
+      if (changes[MONITOR_TARGET_STORAGE_KEY]) {
+        state.monitorTarget = changes[MONITOR_TARGET_STORAGE_KEY].newValue || null;
+        if (state.monitorTarget?.status && state.monitorTarget.status !== "active") {
+          resetMonitorData();
+        }
+        render();
+      }
+
+      if (changes[SNAPSHOT_STORAGE_KEY]) {
+        if (changes[SNAPSHOT_STORAGE_KEY].newValue) {
+          handleSnapshot(changes[SNAPSHOT_STORAGE_KEY].newValue);
+        } else {
+          resetMonitorData();
+          render();
+        }
+      }
     });
   }
 }
@@ -913,6 +1241,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   elements.statusBadge = document.getElementById("statusBadge");
+  elements.monitorTargetText = document.getElementById("monitorTargetText");
   elements.lastUpdatedText = document.getElementById("lastUpdatedText");
   elements.currentMetricsGrid = document.getElementById("currentMetricsGrid");
   elements.rollingMetricsGrid = document.getElementById("rollingMetricsGrid");
@@ -926,7 +1255,19 @@ document.addEventListener("DOMContentLoaded", () => {
   elements.popoutButton = document.getElementById("popoutButton");
   elements.armAudioButton = document.getElementById("armAudioButton");
   elements.clearSessionButton = document.getElementById("clearSessionButton");
+  elements.createAlarmButton = document.getElementById("createAlarmButton");
+  elements.alarmDisplay = document.getElementById("alarmDisplay");
+  elements.alarmModal = document.getElementById("alarmModal");
+  elements.closeAlarmModalButton = document.getElementById("closeAlarmModalButton");
+  elements.cancelAlarmButton = document.getElementById("cancelAlarmButton");
+  elements.alarmForm = document.getElementById("alarmForm");
+  elements.alarmMetricSelect = document.getElementById("alarmMetricSelect");
+  elements.alarmMetricHint = document.getElementById("alarmMetricHint");
+  elements.alarmThresholdInput = document.getElementById("alarmThresholdInput");
+  elements.alarmThresholdHint = document.getElementById("alarmThresholdHint");
+  elements.alarmAbsoluteCheckbox = document.getElementById("alarmAbsoluteCheckbox");
 
   bindEvents();
+  updateAlarmFormState();
   void loadInitialSnapshot();
 });
