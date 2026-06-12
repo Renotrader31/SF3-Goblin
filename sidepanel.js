@@ -769,7 +769,7 @@ function getAlarmMetricLabel(metric) {
 }
 
 function getCurrentAlarmValue(metric, referenceTime = getReferenceTime()) {
-  const minuteBucket = floorToMinute(referenceTime).getTime();
+  const minuteBucket = floorToFiveMinutes(referenceTime).getTime();
 
   if (metric === "price") {
     const priceEntry = state.priceMinuteChanges.get(minuteBucket);
@@ -916,7 +916,7 @@ function checkCustomAlarm(skipInitial) {
 }
 
 function updatePriceHistory(snapshot, timestamp) {
-  const minuteBucket = floorToMinute(timestamp).getTime();
+  const minuteBucket = floorToFiveMinutes(timestamp).getTime();
   const priceValue = parseCompactNumber(snapshot.numericValues?.price ?? snapshot.values?.price);
   if (priceValue == null) {
     return;
@@ -937,7 +937,7 @@ function updatePriceHistory(snapshot, timestamp) {
 
 function updateMetricHistory(snapshot) {
   const timestamp = new Date(snapshot.timestamp);
-  const minuteBucket = floorToMinute(timestamp).getTime();
+  const minuteBucket = floorToFiveMinutes(timestamp).getTime();
   const fiveMinuteBucket = floorToFiveMinutes(timestamp).getTime();
 
   for (const key of Object.keys(state.minuteSeries)) {
@@ -1392,9 +1392,9 @@ function getVisibleMinuteWindow() {
   const start = getMostRecent5MinuteBoundary(reference);
   const result = [];
 
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 6; index += 1) {
     const pointTime = new Date(start);
-    pointTime.setMinutes(start.getMinutes() + index);
+    pointTime.setMinutes(start.getMinutes() - (5 - index) * 5);
     result.push(pointTime);
   }
 
@@ -1406,7 +1406,7 @@ function buildSeriesPoints(metric) {
   const series = state.minuteSeries[metric];
 
   return windowPoints.map((time) => {
-    const bucket = floorToMinute(time).getTime();
+    const bucket = floorToFiveMinutes(time).getTime();
     const entry = series.get(bucket);
     return {
       time,
@@ -1419,7 +1419,7 @@ function buildPriceChangeBars() {
   const windowPoints = getVisibleMinuteWindow();
 
   return windowPoints.map((time) => {
-    const bucket = floorToMinute(time).getTime();
+    const bucket = floorToFiveMinutes(time).getTime();
     const entry = state.priceMinuteChanges.get(bucket);
     return {
       time,
@@ -1568,7 +1568,7 @@ function renderDarkPoolChart() {
   
   // Map window points to dark pool entries
   const dataPoints = windowPoints.map((time) => {
-    const bucket = floorToMinute(time).getTime();
+    const bucket = floorToFiveMinutes(time).getTime();
     const entry = series.get(bucket);
     return {
       time,
