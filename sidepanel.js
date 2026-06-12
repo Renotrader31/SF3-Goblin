@@ -956,8 +956,8 @@ function updateMetricHistory(snapshot) {
           value: numericValue
         };
         state.lastMetricValues[key] = numericValue;
-        series.set(minuteBucket, {
-          timestamp: minuteBucket,
+        series.set(fiveMinuteBucket, {
+          timestamp: fiveMinuteBucket,
           baseValue: numericValue,
           currentValue: numericValue,
           value: 0
@@ -966,8 +966,8 @@ function updateMetricHistory(snapshot) {
         const previousValue = state.lastMetricValues[key];
         state.lastMetricValues[key] = numericValue;
         const delta = Number.isFinite(previousValue) ? numericValue - previousValue : 0;
-        series.set(minuteBucket, {
-          timestamp: minuteBucket,
+        series.set(fiveMinuteBucket, {
+          timestamp: fiveMinuteBucket,
           baseValue: currentBase.value,
           currentValue: numericValue,
           value: delta
@@ -981,24 +981,24 @@ function updateMetricHistory(snapshot) {
         continue;
       }
 
-      const existingEntry = series.get(minuteBucket);
+      const existingEntry = series.get(fiveMinuteBucket);
       const changeValue = numericValue - previousValue;
 
-      series.set(minuteBucket, {
-        timestamp: minuteBucket,
+      series.set(fiveMinuteBucket, {
+        timestamp: fiveMinuteBucket,
         previousValue,
         currentValue: numericValue,
         value: (existingEntry?.value ?? 0) + changeValue,
         lastChange: changeValue
       });
     } else {
-      series.set(minuteBucket, {
-        timestamp: minuteBucket,
+      series.set(fiveMinuteBucket, {
+        timestamp: fiveMinuteBucket,
         value: numericValue
       });
     }
 
-    pruneMap(series, minuteBucket, MAX_MINUTE_HISTORY_MS);
+    pruneMap(series, fiveMinuteBucket, MAX_MINUTE_HISTORY_MS);
   }
 
   updatePriceHistory(snapshot, timestamp);
